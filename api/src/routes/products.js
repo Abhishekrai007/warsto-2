@@ -236,15 +236,61 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
     try {
+        const oldProduct = await Product.findById(req.params.id);
         const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
+
+        // Check if price has changed
+        if (oldProduct.price.amount !== product.price.amount) {
+            await sendPriceChangeEmail(product);
+        }
+
         res.json(product);
     } catch (error) {
         res.status(400).json({ message: 'Error updating product', error: error.message });
     }
 });
+
+const sendPriceChangeEmail = async (product) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        // Fetch users who have this product in their wishlist
+        const usersWithProductInWishlist = await Wishlist.find({ products: product._id }).populate('user');
+
+        for (let wishlist of usersWithProductInWishlist) {
+            const mailOptions = {
+                from: process.env.EMAIL_ADDRESS,
+                to: wishlist.user.email,
+                subject: "Price changed for a product in your wishlist",
+                html: `
+                <html>
+                  <body>
+                    <h1>Price Update</h1>
+                    <p>Dear ${wishlist.user.name},</p>
+                    <p>The price of ${product.name} in your wishlist has changed to ${product.price.amount} ${product.price.currency}.</p>
+                    <p>Visit our website to check it out!</p>
+                  </body>
+                </html>
+                `
+            };
+
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Price change email sent: ', info.response);
+        }
+    } catch (error) {
+        console.error('Error sending price change email:', error);
+    }
+};
+
 
 router.delete('/:id', async (req, res) => {
     try {

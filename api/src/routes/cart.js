@@ -4,8 +4,9 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const passport = require('passport');
 const mongoose = require('mongoose');
-const jwt = require("jsonwebtoken")
-
+const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const User = require('../models/User');
 // router.get('/', (req, res, next) => {
 //     console.log("Incoming request to /api/cart");
 //     console.log("Headers:", req.headers);
@@ -70,6 +71,40 @@ router.get('/', passport.authenticate('jwt', { session: false }), getCart, (req,
     res.json(req.cart);
 });
 
+const sendProductAddedToCartEmail = async (user, product) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: "Product added to your cart",
+            html: `
+            <html>
+              <body>
+                <h1>New Item in Your Cart</h1>
+                <p>Dear ${user.name},</p>
+                <p>The product "${product.name}" has been added to your cart.</p>
+                <p>Price: ${product.price.amount} ${product.price.currency}</p>
+                <p>Visit our website to complete your purchase!</p>
+              </body>
+            </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Product added to cart email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending product added to cart email:', error);
+    }
+};
+
 // Add item to cart
 router.post('/add', passport.authenticate('jwt', { session: false }), getCart, async (req, res) => {
     try {
@@ -92,11 +127,18 @@ router.post('/add', passport.authenticate('jwt', { session: false }), getCart, a
 
         req.cart.calculateTotal();
         await req.cart.save();
+        const user = await User.findById(req.user._id);
+        if (user && user.email) {
+            await sendProductAddedToCartEmail(user, product);
+        }
+
         res.json(req.cart);
     } catch (error) {
         res.status(500).json({ message: 'Error adding item to cart', error: error.message });
     }
 });
+
+
 
 // Remove item from cart
 router.post('/remove', passport.authenticate('jwt', { session: false }), getCart, async (req, res) => {
@@ -156,16 +198,56 @@ router.post('/apply-discount', passport.authenticate('jwt', { session: false }),
 });
 
 // Clear cart
+
 router.post('/clear', passport.authenticate('jwt', { session: false }), getCart, async (req, res) => {
     try {
         req.cart.items = [];
         req.cart.total = 0;
         req.cart.discount = 0;
         await req.cart.save();
+
+        // Send email notification
+        const user = await User.findById(req.user._id);
+        if (user && user.email) {
+            await sendCartClearedEmail(user);
+        }
+
         res.json({ message: 'Cart cleared', cart: req.cart });
     } catch (error) {
         res.status(500).json({ message: 'Error clearing cart', error: error.message });
     }
 });
+
+const sendCartClearedEmail = async (user) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: "Your cart has been cleared",
+            html: `
+            <html>
+              <body>
+                <h1>Cart Cleared</h1>
+                <p>Dear ${user.name},</p>
+                <p>Your shopping cart has been cleared. If you didn't do this, please contact our customer support.</p>
+              </body>
+            </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Cart cleared email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending cart cleared email:', error);
+    }
+};
 
 module.exports = router;

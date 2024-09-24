@@ -20,28 +20,42 @@ const isAdmin = (req, res, next) => {
 // Add a review
 router.post('/', passport.authenticate('jwt', { session: false }), upload.array('images', 5), async (req, res) => {
     try {
-        const { productId, rating, comment } = req.body;
-        const images = req.files ? req.files.map(file => ({ url: file.path, caption: file.originalname })) : [];
+        console.log("Received review submission:", req.body);
+        console.log("Received files:", req.files);
 
-        const existingReview = await Review.findOne({ user: req.user._id, product: productId });
-        if (existingReview) {
-            return res.status(400).json({ message: 'You have already reviewed this product' });
+        const { productId, rating, comment } = req.body;
+
+        // Validate productId
+        if (!productId) {
+            return res.status(400).json({ message: 'Product ID is required' });
         }
 
+        // Parse and validate rating
+        const parsedRating = parseInt(rating, 10);
+        if (isNaN(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+            return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+        }
+
+        // Create review
         const review = new Review({
             user: req.user._id,
             product: productId,
-            rating: Number(rating),
-            comment,
-            images
+            rating: parsedRating,
+            comment: comment || "",
+            images: req.files ? req.files.map(file => ({ url: file.path, caption: file.originalname })) : []
         });
+
         await review.save();
 
+        // Update product review stats
         const product = await Product.findById(productId);
-        await product.updateReviewStats(rating);
+        if (product) {
+            await product.updateReviewStats(parsedRating);
+        }
 
         res.status(201).json(review);
     } catch (error) {
+        console.error("Error in review submission:", error);
         res.status(500).json({ message: 'Error adding review', error: error.message });
     }
 });

@@ -7,7 +7,7 @@ const passport = require('passport');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const jwt = require("jsonwebtoken");
-
+const nodemailer = require('nodemailer');
 // Middleware to check if the user is an admin
 const isAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
@@ -15,6 +15,8 @@ const isAdmin = (req, res, next) => {
     }
     next();
 };
+
+
 
 router.get('/', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
@@ -85,6 +87,40 @@ router.get('/product/:productId', async (req, res) => {
     }
 });
 
+async function sendReviewApprovedEmail(user, product) {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: "Your Review Has Been Approved",
+            html: `
+            <html>
+              <body>
+                <h1>Review Approval Notification</h1>
+                <p>Dear ${user.name},</p>
+                <p>Your review for "${product.name}" has been approved.</p>
+                <p>Thank you for taking the time to share your thoughts about our product.</p>
+                <p>Your feedback is valuable to us and helps other customers make informed decisions.</p>
+                <p>Visit our website to see your published review!</p>
+              </body>
+            </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Review approval email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending review approval email:', error);
+    }
+}
 // Update review status (admin only)
 router.put('/:id/status', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
@@ -95,20 +131,26 @@ router.put('/:id/status', passport.authenticate('jwt', { session: false }), isAd
             return res.status(400).json({ message: 'Invalid status' });
         }
 
-        const review = await Review.findByIdAndUpdate(
-            id,
-            { status },
-            { new: true }
-        ).populate('product');
+        const review = await Review.findById(id)
+            .populate('product')
+            .populate('user');
 
         if (!review) {
             return res.status(404).json({ message: 'Review not found' });
         }
 
+        const oldStatus = review.status;
+        review.status = status;
+        await review.save();
+
         // Update product review stats if necessary
-        if (status === 'approved' && review.status !== 'approved') {
+        if (status === 'approved' && oldStatus !== 'approved') {
             await review.product.updateReviewStats(review.rating);
-        } else if (status !== 'approved' && review.status === 'approved') {
+            // Send email to user
+            if (review.user && review.user.email) {
+                await sendReviewApprovedEmail(review.user, review.product);
+            }
+        } else if (status !== 'approved' && oldStatus === 'approved') {
             await review.product.updateReviewStats(-review.rating);
         }
 

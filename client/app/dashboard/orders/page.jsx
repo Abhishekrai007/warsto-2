@@ -358,7 +358,7 @@ const Orders = () => {
                 <div>
                   <strong>Shipping Address:</strong>
                   <p className="text-gray-600">
-                    {`${editingOrder.shippingAddress.street}, ${editingOrder.shippingAddress.city}, ${editingOrder.shippingAddress.state}, ${editingOrder.shippingAddress.country}, ${editingOrder.shippingAddress.zipCode}`}
+                    {`${editingOrder.shippingAddress?.street}, ${editingOrder.shippingAddress?.city}, ${editingOrder.shippingAddress?.state}, ${editingOrder.shippingAddress?.country}, ${editingOrder.shippingAddress?.zipCode}`}
                   </p>
                 </div>
                 <div>

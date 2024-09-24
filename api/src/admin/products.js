@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const passport = require('passport');
-
+const nodemailer = require('nodemailer');
+const User = require('../models/User');
+const Whishlist = require('../models/WhishList');
 // Middleware to check if the user is an admin
 const isAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
@@ -55,13 +57,69 @@ router.post('/', passport.authenticate('jwt', { session: false }), isAdmin, asyn
     }
 });
 
+async function sendPriceChangeEmail(user, product, oldPrice, newPrice) {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: "Price Change Alert for Wishlisted Product",
+            html: `
+            <html>
+              <body>
+                <h1>Price Change Alert</h1>
+                <p>Dear ${user.name},</p>
+                <p>The price of "${product.name}" in your wishlist has changed.</p>
+                <p>Old Price: ${oldPrice} ${product.price.currency}</p>
+                <p>New Price: ${newPrice} ${product.price.currency}</p>
+                <p>Visit our website to check out the updated price!</p>
+              </body>
+            </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Price change email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending price change email:', error);
+    }
+}
+
+// Update a product (admin only)
 // Update a product (admin only)
 router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
-        const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!product) {
+        const oldProduct = await Product.findById(req.params.id);
+        if (!oldProduct) {
             return res.status(404).json({ message: 'Product not found' });
         }
+
+        const oldPrice = oldProduct.price.amount;
+        const newPrice = req.body.price.amount;
+
+        const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+
+        // Check if price has changed
+        if (oldPrice !== newPrice) {
+            // Find all wishlists containing this product
+            const wishlists = await Whishlist.find({ products: req.params.id });
+
+            // Send email to each user
+            for (let wishlist of wishlists) {
+                const user = await User.findById(wishlist.user);
+                if (user && user.email) {
+                    await sendPriceChangeEmail(user, product, oldPrice, newPrice);
+                }
+            }
+        }
+
         res.json(product);
     } catch (error) {
         res.status(400).json({ message: 'Error updating product', error: error.message });

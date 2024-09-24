@@ -7,6 +7,21 @@ const razorpay = require('../config/razorpay');
 const crypto = require('crypto');
 const jwt = require("jsonwebtoken")
 
+const nodemailer = require('nodemailer');
+// const Invoice = require('../../../client/components/Invoice'); // Assuming you've exported your Invoice component
+const { renderToString } = require('@react-pdf/renderer');
+const User = require('../models/User');
+const PDFDocument = require('pdfkit');
+const { validateMeasurementSlot } = require('../utils/validationUtils');
+
+
+const isSlotAvailable = async (date, timeRange) => {
+    const existingOrder = await Order.findOne({
+        'measurementSlot?.date': date,
+        'measurementSlot?.timeRange': timeRange
+    });
+    return !existingOrder;
+};
 
 
 
@@ -59,11 +74,23 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
 
 router.post('/create-razorpay-order', passport.authenticate('jwt', { session: false }), async (req, res) => {
     try {
-        const { shippingAddress, billingAddress, deliveryOption, mobileNumber } = req.body;
+        const { shippingAddress, billingAddress, deliveryOption, mobileNumber, measurementSlot } = req.body;
 
         // Validate mobile number
         if (!/^[6-9]\d{9}$/.test(mobileNumber)) {
-            return res.status(400).json({ message: 'Invalid Indian mobile number. Please enter a 10-digit number starting with 6, 7, 8, or 9.' });
+            return res.status(400).json({ message: 'Invalid Indian mobile number.' });
+        }
+
+        // Validate measurement slot
+        // Validate measurement slot
+        if (!measurementSlot || !measurementSlot.date || !measurementSlot.timeRange) {
+            return res.status(400).json({ message: 'Invalid measurement slot.' });
+        }
+
+        // Check slot availability
+        const slotAvailable = await isSlotAvailable(measurementSlot.date, measurementSlot.timeRange);
+        if (!slotAvailable) {
+            return res.status(400).json({ message: 'Selected measurement slot is not available.' });
         }
 
         const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
@@ -75,7 +102,7 @@ router.post('/create-razorpay-order', passport.authenticate('jwt', { session: fa
         const total = cart.total + deliveryFee;
 
         const options = {
-            amount: total * 100, // amount in the smallest currency unit
+            amount: total * 100,
             currency: "INR",
             receipt: "order_receipt_" + Date.now(),
             payment_capture: 1,
@@ -83,7 +110,6 @@ router.post('/create-razorpay-order', passport.authenticate('jwt', { session: fa
 
         const razorpayOrder = await razorpay.orders.create(options);
 
-        // Create an Order document
         const order = new Order({
             user: req.user._id,
             items: cart.items.map(item => ({
@@ -100,6 +126,7 @@ router.post('/create-razorpay-order', passport.authenticate('jwt', { session: fa
             billingAddress,
             deliveryOption,
             mobileNumber,
+            measurementSlot,
             razorpayOrderId: razorpayOrder.id
         });
 
@@ -117,6 +144,110 @@ router.post('/create-razorpay-order', passport.authenticate('jwt', { session: fa
     }
 });
 
+
+const generateInvoicePDF = (order, user) => {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument();
+        let buffers = [];
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => {
+            let pdfData = Buffer.concat(buffers);
+            resolve(pdfData);
+        });
+
+        // Add content to PDF
+        doc.fontSize(18).text('Invoice', { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(12).text(`Name: ${user.name}`);
+        doc.moveDown();
+        doc.fontSize(12).text(`Email: ${user.email}`);
+        doc.moveDown();
+        doc.fontSize(12).text(`Order ID: ${order._id}`);
+        doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`);
+        doc.moveDown();
+        doc.text('Items:');
+        order.items.forEach(item => {
+            doc.text(`${item.productName} - Quantity: ${item.quantity} - Price: ₹${item.price * item.quantity}`);
+        });
+        doc.moveDown();
+        doc.text(`Total: ₹${order.total}`);
+
+        doc.end();
+    });
+};
+
+const sendOrderConfirmationEmail = async (order, user) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        const invoicePdf = await generateInvoicePDF(order, user);
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: "Thank you for your order!",
+            html: `
+            <html>
+              <head>
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { width: 100%; max-width: 600px; margin: 0 auto; }
+                  .header { background-color: #f4f4f4; padding: 20px; text-align: center; }
+                  .content { padding: 20px; }
+                  .order-summary { background-color: #f9f9f9; padding: 15px; margin-top: 20px; }
+                  .button { display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>Order Confirmation</h1>
+                  </div>
+                  <div class="content">
+                    <p>Dear ${user.name},</p>
+                    <p>Thank you for your order! We're pleased to confirm that we've received your purchase.</p>
+                    <p><strong>Order Number:</strong> ${order._id}</p>
+                    <p><strong>Order Date:</strong> ${new Date(order.createdAt).toLocaleDateString()}</p>
+                    <p><strong>Measurement Slot:</strong> ${order.measurementSlot.date.toLocaleDateString()} - ${order.measurementSlot.timeRange}</p>
+                    <div class="order-summary">
+                      <h2>Order Summary:</h2>
+                      <ul>
+                        ${order.items.map(item => `
+                          <li>${item.productName} - Quantity: ${item.quantity} - Price: ₹${item.price * item.quantity}</li>
+                        `).join('')}
+                      </ul>
+                      <p><strong>Total: ₹${order.total}</strong></p>
+                    </div>
+                    
+                    <p>We're currently processing your order and will send you another email when it ships.</p>
+                    <p>You can find your invoice attached to this email.</p>
+                    
+                  </div>
+                </div>
+              </body>
+            </html>
+          `,
+            attachments: [
+                {
+                    filename: 'invoice.pdf',
+                    content: invoicePdf,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Order confirmation email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending order confirmation email:', error);
+    }
+};
 router.post('/verify-payment', async (req, res) => {
     try {
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -131,25 +262,27 @@ router.post('/verify-payment', async (req, res) => {
         const isAuthentic = expectedSignature === razorpay_signature;
 
         if (isAuthentic) {
-            // Payment is verified
             const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
             if (!order) {
                 return res.status(404).json({ success: false, message: 'Order not found' });
             }
 
-            // Update order status
             order.status = 'Processing';
             order.paymentStatus = 'Paid';
             order.razorpayPaymentId = razorpay_payment_id;
             order.razorpaySignature = razorpay_signature;
             await order.save();
 
-            // Clear the cart
             await Cart.findOneAndUpdate({ user: order.user }, { $set: { items: [], total: 0, discount: 0 } });
+
+            const user = await User.findById(order.user);
+            if (user && user.email) {
+                await sendOrderConfirmationEmail(order, user);
+            }
 
             res.json({
                 success: true,
-                message: 'Payment has been verified',
+                message: 'Payment has been verified and order confirmation email sent',
                 order: order
             });
         } else {
@@ -190,28 +323,6 @@ router.get('/:id', passport.authenticate('jwt', { session: false }), async (req,
         res.status(500).json({ message: 'Error fetching order', error: error.message });
     }
 });
-// Update order status (admin only)
-router.put('/:id/status', passport.authenticate('jwt', { session: false }), async (req, res) => {
-    try {
-        // Add admin check here
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ message: 'Access denied' });
-        }
 
-        const order = await Order.findByIdAndUpdate(
-            req.params.id,
-            { status: req.body.status },
-            { new: true }
-        );
-
-        if (!order) {
-            return res.status(404).json({ message: 'Order not found' });
-        }
-
-        res.json(order);
-    } catch (error) {
-        res.status(500).json({ message: 'Error updating order status', error: error.message });
-    }
-});
 
 module.exports = router;

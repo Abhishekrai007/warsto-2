@@ -6,6 +6,7 @@ const passport = require('passport');
 const razorpay = require('../config/razorpay');
 const crypto = require('crypto');
 const jwt = require("jsonwebtoken");
+const nodemailer = require('nodemailer');
 
 // Middleware to check if the user is an admin
 const isAdmin = (req, res, next) => {
@@ -108,11 +109,78 @@ router.get('/:id', passport.authenticate('jwt', { session: false }), isAdmin, as
     }
 });
 
+const sendOrderUpdateEmail = async (order, user) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_ADDRESS,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+
+        let reviewLink = '';
+        if (order.status === 'Delivered') {
+            const token = jwt.sign({ userId: user._id, orderId: order._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+            reviewLink = `${process.env.FRONTEND_URL}/order-review?orderId=${order._id}&token=${token}`;
+        }
+
+        const mailOptions = {
+            from: process.env.EMAIL_ADDRESS,
+            to: user.email,
+            subject: `Order Status Update - ${order.status}`,
+            html: `
+                <html>
+                  <head>
+                    <style>
+                      body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                      .container { width: 100%; max-width: 600px; margin: 0 auto; }
+                      .header { background-color: #f4f4f4; padding: 20px; text-align: center; }
+                      .content { padding: 20px; }
+                    </style>
+                  </head>
+             <body>
+            <div class="container">
+              <div class="header">
+                <h1>Order Status Update</h1>
+              </div>
+              <div class="content">
+                <p>Dear ${user.name},</p>
+                <p>Your order status has been updated.</p>
+                <p><strong>Order Number:</strong> ${order._id}</p>
+                <div class="order-summary">
+                  <h4>Order Summary:</h4>
+                  <ul>
+                    ${order.items.map(item => `
+                      <li>${item.productName} - Quantity: ${item.quantity} - Price: ₹${item.price * item.quantity}</li>
+                    `).join('')}
+                  </ul>
+                  <p><strong>Total: ₹${order.total}</strong></p>
+                </div>
+                <p><strong>New Status:</strong> ${order.status}</p>
+                ${order.status === 'Delivered' ? `
+                  <p>We'd love to hear your thoughts on the products you received. Please click the link below to leave a review:</p>
+                  <p><a href="${reviewLink}">Review Your Order</a></p>
+                ` : ''}
+                <p>If you have any questions about your order, please don't hesitate to contact us.</p>
+                <p>Thank you for shopping with us!</p>
+              </div>
+            </div>
+          </body>
+                </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Order update email sent: ', info.response);
+    } catch (error) {
+        console.error('Error sending order update email:', error);
+    }
+};
+
 // In your orders.js API file
 router.put('/:id/status', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
-
-
         const { status, paymentStatus } = req.body;
         const updateData = {};
         if (status) updateData.status = status;
@@ -122,10 +190,15 @@ router.put('/:id/status', passport.authenticate('jwt', { session: false }), isAd
             req.params.id,
             updateData,
             { new: true }
-        );
+        ).populate('user');
 
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
+        }
+
+        // Send email notification
+        if (order.user && order.user.email) {
+            await sendOrderUpdateEmail(order, order.user);
         }
 
         res.json(order);

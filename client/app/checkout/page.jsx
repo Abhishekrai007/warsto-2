@@ -19,6 +19,7 @@ import {
   Truck,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import MeasurementSlotSelector from "@/components/MeasurementSlotSelector";
 
 const Checkout = () => {
   const { user, loading: userLoading } = useSelector((state) => state.auth);
@@ -42,6 +43,7 @@ const Checkout = () => {
   const [deliveryOption, setDeliveryOption] = useState("standard");
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [measurementSlot, setMeasurementSlot] = useState(null);
   const router = useRouter();
   const dispatch = useDispatch();
 
@@ -104,6 +106,10 @@ const Checkout = () => {
     }
   };
 
+  const handleSlotSelect = (slot) => {
+    setMeasurementSlot(slot);
+  };
+
   const validateMobileNumber = (number) => /^[6-9]\d{9}$/.test(number);
 
   const handlePayment = async () => {
@@ -128,6 +134,7 @@ const Checkout = () => {
         billingAddress: sameAsBilling ? shippingAddress : billingAddress,
         deliveryOption,
         mobileNumber,
+        measurementSlot,
       });
 
       const { orderId, amount, currency, order } = response.data;
@@ -331,6 +338,12 @@ const Checkout = () => {
       <CardContent className="space-y-4">
         {renderProductSummary()}
         {renderOrderSummary()}
+        {measurementSlot && (
+          <div>
+            <h4 className="font-semibold">Measurement Slot</h4>
+            <p>{`${measurementSlot.date} - ${measurementSlot.timeRange}`}</p>
+          </div>
+        )}
         <div>
           <h4 className="font-semibold">Shipping Address</h4>
           <p>{Object.values(shippingAddress).join(", ")}</p>
@@ -459,6 +472,7 @@ const Checkout = () => {
                   />
                 </CardContent>
               </Card>
+              <MeasurementSlotSelector onSlotSelect={handleSlotSelect} />
               <div className="flex justify-between mt-6">
                 <Button onClick={() => setStep(1)} variant="outline">
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back to Address

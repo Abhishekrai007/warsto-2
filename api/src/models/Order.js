@@ -15,6 +15,15 @@ const OrderItemSchema = new mongoose.Schema({
     price: { type: Number, required: true },
 });
 
+const MeasurementSlotSchema = new mongoose.Schema({
+    date: { type: Date, required: true },
+    timeRange: {
+        type: String,
+        enum: ['morning', 'afternoon', 'evening'],
+        required: true
+    }
+});
+
 const OrderSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     items: [OrderItemSchema],
@@ -27,6 +36,10 @@ const OrderSchema = new mongoose.Schema({
     billingAddress: AddressSchema,
     deliveryOption: { type: String, enum: ['standard', 'express'], default: 'standard' },
     paymentStatus: { type: String, enum: ['Pending', 'Paid', 'Failed'], default: 'Pending' },
+    measurementSlot: {
+        type: MeasurementSlotSchema,
+        required: true
+    },
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
