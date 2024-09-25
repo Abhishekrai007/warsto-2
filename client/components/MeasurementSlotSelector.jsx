@@ -1,107 +1,93 @@
-import React, { useState } from "react";
-import DatePicker from "react-datepicker";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import {
-  addDays,
-  setHours,
-  setMinutes,
-  isSunday,
-  isAfter,
-  startOfDay,
-  format,
-} from "date-fns";
-
-import "react-datepicker/dist/react-datepicker.css";
+import { format, addDays, isBefore, startOfDay } from "date-fns";
+import api from "@/utils/api";
+import { Calendar, Clock } from "lucide-react";
 
 const MeasurementSlotSelector = ({ onSlotSelect }) => {
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedTimeRange, setSelectedTimeRange] = useState("");
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const timeRanges = [
-    { label: "Morning (10 AM - 1 PM)", value: "morning" },
-    { label: "Afternoon (1 PM - 4 PM)", value: "afternoon" },
-    { label: "Evening (4 PM - 7 PM)", value: "evening" },
-  ];
+  useEffect(() => {
+    fetchAvailableSlots();
+  }, []);
 
-  const handleDateSelect = (date) => {
-    setSelectedDate(date);
-    setSelectedTimeRange("");
-  };
-
-  const handleTimeRangeSelect = (range) => {
-    setSelectedTimeRange(range);
-  };
-
-  const handleConfirmSlot = () => {
-    if (selectedDate && selectedTimeRange) {
-      onSlotSelect({
-        date: format(selectedDate, "yyyy-MM-dd"),
-        timeRange: selectedTimeRange,
-      });
+  const fetchAvailableSlots = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get("/orders/available-slots");
+      setAvailableSlots(response.data);
+      setError(null);
+    } catch (err) {
+      setError("Failed to fetch available slots. Please try again later.");
+      console.error("Error fetching available slots:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const isDateDisabled = (date) => {
-    const today = new Date();
-    const minDate = addDays(today, 1);
-    return isSunday(date) || !isAfter(startOfDay(date), startOfDay(minDate));
+  const handleSlotSelect = (slot) => {
+    setSelectedSlot(slot);
+    onSlotSelect(slot);
   };
 
-  const filterTime = (time) => {
-    const selectedTime = new Date(time);
-    return selectedTime.getHours() >= 10 && selectedTime.getHours() < 19;
+  const convertTo12HourFormat = (timeRange) => {
+    const [start, end] = timeRange.split(" - ");
+    const convertTime = (time) => {
+      const [hours, minutes] = time.split(":");
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const hours12 = hours % 12 || 12;
+      return `${hours12}:${minutes} ${ampm}`;
+    };
+    return `${convertTime(start)} - ${convertTime(end)}`;
   };
+
+  if (loading)
+    return <div className="text-center py-8">Loading available slots...</div>;
+  if (error)
+    return <div className="text-red-500 text-center py-8">{error}</div>;
 
   return (
-    <Card>
+    <Card className="mt-6">
       <CardHeader>
-        <CardTitle>Select Measurement Slot</CardTitle>
+        <CardTitle className="flex items-center text-2xl">
+          <Calendar className="mr-2" /> Select Measurement Slot
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <Label>Select Date</Label>
-          <DatePicker
-            selected={selectedDate}
-            onChange={handleDateSelect}
-            filterDate={(date) => !isDateDisabled(date)}
-            filterTime={filterTime}
-            minDate={addDays(new Date(), 1)}
-            dateFormat="MMMM d, yyyy"
-            className="w-full p-2 border rounded-md"
-          />
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {availableSlots.map((slot, index) => (
+            <Button
+              key={index}
+              onClick={() => handleSlotSelect(slot)}
+              variant={selectedSlot === slot ? "secondary" : "outline"}
+              className={`text-left p-4 h-auto ${
+                selectedSlot === slot ? "ring-2 ring-primary" : ""
+              }`}
+            >
+              <div className="flex flex-col space-y-2">
+                <div className="flex items-center text-sm font-semibold">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {format(new Date(slot.startTime), "MMM d, yyyy")}
+                </div>
+                <div className="flex items-center text-sm">
+                  <Clock className="mr-2 h-4 w-4" />
+                  {convertTo12HourFormat(slot.timeRange)}
+                </div>
+              </div>
+            </Button>
+          ))}
         </div>
-        {selectedDate && (
-          <div>
-            <Label>Select Time Range</Label>
-            <Select onChange={handleTimeRangeSelect} value={selectedTimeRange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select time range" />
-              </SelectTrigger>
-              <SelectContent>
-                {timeRanges.map((range) => (
-                  <SelectItem key={range.value} value={range.value}>
-                    {range.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {selectedSlot && (
+          <div className="mt-6 p-4 bg-secondary rounded-lg">
+            <h4 className="font-semibold mb-2">Selected Slot:</h4>
+            <p>{format(new Date(selectedSlot.startTime), "MMMM d, yyyy")}</p>
+            <p>{convertTo12HourFormat(selectedSlot.timeRange)}</p>
           </div>
         )}
-        <Button
-          onClick={handleConfirmSlot}
-          disabled={!selectedDate || !selectedTimeRange}
-        >
-          Confirm Slot
-        </Button>
       </CardContent>
     </Card>
   );

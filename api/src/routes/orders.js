@@ -13,16 +13,16 @@ const { renderToString } = require('@react-pdf/renderer');
 const User = require('../models/User');
 const PDFDocument = require('pdfkit');
 const { validateMeasurementSlot } = require('../utils/validationUtils');
-
+const { getAvailableSlots } = require('../utils/slotService');
+const { addDays, startOfDay } = require('date-fns');
 
 const isSlotAvailable = async (date, timeRange) => {
     const existingOrder = await Order.findOne({
-        'measurementSlot?.date': date,
-        'measurementSlot?.timeRange': timeRange
+        'measurementSlot.date': date,
+        'measurementSlot.timeRange': timeRange
     });
     return !existingOrder;
 };
-
 
 
 // Create a new order
@@ -72,6 +72,20 @@ router.post('/', passport.authenticate('jwt', { session: false }), async (req, r
     }
 });
 
+router.get('/available-slots', passport.authenticate('jwt', { session: false }), async (req, res) => {
+    try {
+        const startDate = new Date();
+        const endDate = addDays(startDate, 14); // Fetch slots for the next 14 days
+
+        const availableSlots = await getAvailableSlots(startDate, endDate);
+
+        res.json(availableSlots);
+    } catch (error) {
+        console.error("Error fetching available slots:", error);
+        res.status(500).json({ message: 'Error fetching available slots', error: error.message });
+    }
+});
+
 router.post('/create-razorpay-order', passport.authenticate('jwt', { session: false }), async (req, res) => {
     try {
         const { shippingAddress, billingAddress, deliveryOption, mobileNumber, measurementSlot } = req.body;
@@ -82,14 +96,23 @@ router.post('/create-razorpay-order', passport.authenticate('jwt', { session: fa
         }
 
         // Validate measurement slot
-        // Validate measurement slot
-        if (!measurementSlot || !measurementSlot.date || !measurementSlot.timeRange) {
+        if (!measurementSlot || !measurementSlot.date || !measurementSlot.timeRange || !measurementSlot.startTime) {
             return res.status(400).json({ message: 'Invalid measurement slot.' });
         }
 
+        const slotDate = new Date(measurementSlot.startTime);
+        const now = new Date();
+        if (slotDate <= addDays(now, 1)) {
+            return res.status(400).json({ message: 'Measurement slot must be at least 24 hours in advance.' });
+        }
+
         // Check slot availability
-        const slotAvailable = await isSlotAvailable(measurementSlot.date, measurementSlot.timeRange);
-        if (!slotAvailable) {
+        const slotAvailable = await getAvailableSlots(now, slotDate);
+        const isAvailable = slotAvailable.some(slot =>
+            slot.date === measurementSlot.date && slot.timeRange === measurementSlot.timeRange
+        );
+
+        if (!isAvailable) {
             return res.status(400).json({ message: 'Selected measurement slot is not available.' });
         }
 

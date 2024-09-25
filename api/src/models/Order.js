@@ -19,7 +19,7 @@ const MeasurementSlotSchema = new mongoose.Schema({
     date: { type: Date, required: true },
     timeRange: {
         type: String,
-        enum: ['morning', 'afternoon', 'evening'],
+        enum: ['10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00'],
         required: true
     }
 });
