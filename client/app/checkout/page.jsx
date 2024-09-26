@@ -330,6 +330,17 @@ const Checkout = () => {
     </Card>
   );
 
+  const convertTo12HourFormat = (timeRange) => {
+    const [start, end] = timeRange.split(" - ");
+    const convertTime = (time) => {
+      const [hours, minutes] = time.split(":");
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const hours12 = hours % 12 || 12;
+      return `${hours12}:${minutes} ${ampm}`;
+    };
+    return `${convertTime(start)} - ${convertTime(end)}`;
+  };
+
   const renderReviewOrder = () => (
     <Card>
       <CardHeader>
@@ -341,7 +352,9 @@ const Checkout = () => {
         {measurementSlot && (
           <div>
             <h4 className="font-semibold">Measurement Slot</h4>
-            <p>{`${measurementSlot.date} - ${measurementSlot.timeRange}`}</p>
+            <p>{`${measurementSlot.date} - ${convertTo12HourFormat(
+              measurementSlot.timeRange
+            )}`}</p>
           </div>
         )}
         <div>

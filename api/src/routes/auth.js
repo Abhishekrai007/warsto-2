@@ -92,53 +92,9 @@ router.post('/signin', (req, res, next) => {
     })(req, res);
 });
 
-router.post('/send-otp', async (req, res) => {
-    try {
-        const { mobileNumber } = req.body;
-        const otp = Math.floor(100000 + Math.random() * 900000); // Generate 6-digit OTP
 
-        // In a real-world scenario, you'd send this OTP via SMS
-        // For this example, we'll just store it in the user document
-        let user = await User.findOne({ mobileNumber });
-        if (!user) {
-            user = new User({ mobileNumber });
-        }
-        user.otp = otp;
-        user.otpExpires = Date.now() + 600000; // OTP expires in 10 minutes
-        await user.save();
 
-        // For demonstration, we're logging the OTP. In production, you'd send it via SMS.
-        console.log(`OTP for ${mobileNumber}: ${otp}`);
 
-        res.json({ message: 'OTP sent successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error sending OTP', error: error.message });
-    }
-});
-
-router.post('/verify-otp', async (req, res) => {
-    try {
-        const { mobileNumber, otp } = req.body;
-        const user = await User.findOne({
-            mobileNumber,
-            otp,
-            otpExpires: { $gt: Date.now() }
-        });
-
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid or expired OTP' });
-        }
-
-        user.isVerified = true;
-        user.otp = undefined;
-        user.otpExpires = undefined;
-        await user.save();
-
-        res.json({ verified: true, message: 'Mobile number verified successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error verifying OTP', error: error.message });
-    }
-});
 
 router.put('/profile', passport.authenticate('jwt', { session: false }), async (req, res) => {
     try {
