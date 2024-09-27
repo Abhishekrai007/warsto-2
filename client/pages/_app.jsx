@@ -1,35 +1,35 @@
-// // import { useEffect } from "react";
-
-// import { loadUser } from "@/auth/authSlice";
-// import api from "../utils/api";
-// // import "../styles/globals.css";
 // import { useEffect } from "react";
-// import { store } from "@/auth/store";
 
-// function MyApp({ Component, pageProps }) {
-//   useEffect(() => {
-//     const initializeAuth = async () => {
-//       const token = localStorage.getItem("token");
-//       if (token) {
-//         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+import { loadUser } from "@/auth/authSlice";
+import api from "../utils/api";
+// import "../styles/globals.css";
+import { useEffect } from "react";
+import { store } from "@/auth/store";
 
-//         try {
-//           await store.dispatch(loadUser()).unwrap();
-//         } catch (error) {
-//           console.error("Error loading user:", error);
-//           localStorage.removeItem("token");
-//         }
-//       }
-//     };
+function MyApp({ Component, pageProps }) {
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem("token");
+      if (token) {
+        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
-//     initializeAuth();
-//   }, []);
+        try {
+          await store.dispatch(loadUser()).unwrap();
+        } catch (error) {
+          console.error("Error loading user:", error);
+          localStorage.removeItem("token");
+        }
+      }
+    };
 
-//   return (
-//     <Provider store={store}>
-//       <Component {...pageProps} />
-//     </Provider>
-//   );
-// }
+    initializeAuth();
+  }, []);
 
-// export default MyApp;
+  return (
+    <Provider store={store}>
+      <Component {...pageProps} />
+    </Provider>
+  );
+}
+
+export default MyApp;

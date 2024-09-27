@@ -8,16 +8,14 @@ export const signIn = createAsyncThunk(
             let response;
             if (token) {
                 // Google sign-in
-                localStorage.setItem('token', token);
-                console.log("Token stored:", response.data.token);
-                response = await axios.get('/api/auth/user', {
+                response = await api.get('/user', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
             } else {
                 // Regular sign-in
-                response = await axios.post('/api/auth/signin', { email, password });
-                localStorage.setItem('token', response.data.token);
+                response = await api.post('/auth/signin', { email, password });
             }
+            localStorage.setItem('token', response.data.token);
             return response.data;
         } catch (error) {
             return rejectWithValue(error.response.data);
@@ -29,7 +27,7 @@ export const setUser = createAsyncThunk(
     'auth/setUser',
     async (token, { dispatch }) => {
         try {
-            const response = await axios.get('/api/auth/user', {
+            const response = await api.get('/auth/user', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             localStorage.setItem('token', token);
@@ -45,10 +43,11 @@ export const signUp = createAsyncThunk(
     'auth/signUp',
     async ({ name, email, password, mobileNumber }, { rejectWithValue }) => {
         try {
-            const response = await axios.post('/api/auth/signup', { name, email, password, mobileNumber });
+            const response = await api.post('/auth/signup', { name, email, password, mobileNumber });
             return response.data;
         } catch (error) {
-            return rejectWithValue(error.response.data);
+            console.error('Signup error:', error);
+            return rejectWithValue(error.response?.data || { message: "An error occurred during sign up" });
         }
     }
 );
@@ -73,7 +72,7 @@ export const checkTokenValidity = createAsyncThunk(
             if (!token) {
                 throw new Error('No token found');
             }
-            const response = await axios.get('/api/auth/validate-token', {
+            const response = await api.get('/auth/validate-token', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             return response.data;
@@ -128,6 +127,7 @@ const authSlice = createSlice({
             .addCase(signIn.fulfilled, (state, action) => {
                 state.loading = false;
                 state.user = action.payload.user;
+                state.token = action.payload.token;
                 localStorage.setItem('token', action.payload.token);
             })
             .addCase(signIn.rejected, (state, action) => {

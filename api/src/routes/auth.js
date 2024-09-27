@@ -8,6 +8,12 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const router = express.Router();
 
+const generateTokens = (user) => {
+    const accessToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    const refreshToken = jwt.sign({ id: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
+    return { accessToken, refreshToken };
+};
+
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -69,9 +75,10 @@ router.post('/signup', async (req, res) => {
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
         res.status(201).json({ user, token });
     } catch (error) {
+        console.error('Signup error:', error);
         res.status(500).json({ message: 'Error signing up', error: error.message });
     }
-})
+});
 
 router.post('/signin', (req, res, next) => {
     passport.authenticate('local', { session: false }, (err, user, info) => {
@@ -92,7 +99,21 @@ router.post('/signin', (req, res, next) => {
     })(req, res);
 });
 
+router.post('/refresh-token', async (req, res) => {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(401).json({ message: 'Refresh Token Required' });
 
+    try {
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        const user = await User.findById(decoded.id);
+        if (!user) return res.status(401).json({ message: 'User not found' });
+
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
+        res.json({ accessToken, refreshToken: newRefreshToken });
+    } catch (error) {
+        res.status(401).json({ message: 'Invalid Refresh Token' });
+    }
+});
 
 
 
