@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { EyeIcon, EyeOffIcon, MailIcon, LockIcon } from "lucide-react";
+import { mergeGuestData } from "@/utils/api";
 
 const SignIn = () => {
   const [email, setEmail] = useState("");
@@ -31,6 +32,10 @@ const SignIn = () => {
     e.preventDefault();
     try {
       const result = await dispatch(signIn({ email, password }));
+      const guestId = localStorage.getItem("guestId");
+      if (guestId) {
+        await mergeGuestData(guestId, userData.id);
+      }
       if (signIn.fulfilled.match(result)) {
         router.push("/");
       } else if (signIn.rejected.match(result)) {

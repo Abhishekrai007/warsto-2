@@ -15,6 +15,16 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+export const mergeGuestData = async (guestId, userId) => {
+  try {
+    await api.post("/cart/merge", { guestId, userId });
+    await api.post("/wishlist/merge", { guestId, userId });
+    localStorage.removeItem("guestId"); // Remove the guest ID after merging
+  } catch (error) {
+    console.error("Error merging guest data:", error);
+  }
+};
+
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
   withCredentials: true,
@@ -25,6 +35,10 @@ api.interceptors.request.use(
     const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const guestId = localStorage.getItem("guestId");
+    if (guestId) {
+      config.headers["X-Guest-ID"] = guestId;
     }
     return config;
   },

@@ -24,6 +24,7 @@ import {
   UserIcon,
   PhoneIcon,
 } from "lucide-react";
+import { mergeGuestData } from "@/utils/api";
 
 const SignUp = () => {
   const [name, setName] = useState("");
@@ -40,6 +41,10 @@ const SignUp = () => {
     e.preventDefault();
     setError(null);
     try {
+      const guestId = localStorage.getItem("guestId");
+      if (guestId) {
+        await mergeGuestData(guestId, userData.id);
+      }
       const result = await dispatch(
         signUp({ name, email, password, mobileNumber })
       );

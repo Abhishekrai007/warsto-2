@@ -90,6 +90,7 @@ const authSlice = createSlice({
         user: null,
         loading: false,
         error: null,
+        guestId: localStorage.getItem('guestId') || null,
     },
     reducers: {
         setUser: (state, action) => {
@@ -101,6 +102,10 @@ const authSlice = createSlice({
         },
         setToken: (state, action) => {
             state.token = action.payload;
+        },
+        setGuestId: (state, action) => {
+            state.guestId = action.payload;
+            localStorage.setItem('guestId', action.payload);
         },
     },
     extraReducers: (builder) => {
@@ -162,5 +167,5 @@ const authSlice = createSlice({
     },
 });
 
-export const { logout } = authSlice.actions;
+export const { logout, setGuestId } = authSlice.actions;
 export default authSlice.reducer;

@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 
 const WishlistSchema = new mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    products: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }]
+    user: { type: String, required: true },
+    products: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+    isGuest: { type: Boolean, default: false },
 }, { timestamps: true });
 
 WishlistSchema.index({ user: 1 });

@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const User = require('../models/User');
+const { v4: uuidv4 } = require('uuid');
 // router.get('/', (req, res, next) => {
 //     console.log("Incoming request to /api/cart");
 //     console.log("Headers:", req.headers);
@@ -24,51 +25,59 @@ const User = require('../models/User');
 // Middleware to get cart
 const getCart = async (req, res, next) => {
     try {
-        let token = req.headers.authorization?.split(' ')[1] || req.cookies.token;
-        if (!token) {
-            return res.status(401).json({ message: 'No token provided' });
-        }
+        let userId;
+        let isGuest = false;
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = { _id: decoded.id };
-
-        console.log("Getting cart for user:", req.user._id);
-        let cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
-        if (!cart) {
-            console.log("No cart found, creating new cart");
-            cart = new Cart({ user: req.user._id, items: [], subtotal: 0, total: 0 });
-        } else if (cart.items.length === 0) {
-            console.log("Cart found but empty, resetting totals");
-            cart.subtotal = 0;
-            cart.total = 0;
-            cart.discount = 0;
+        if (req.headers.authorization) {
+            const token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            userId = decoded.id;
         } else {
-            console.log("Recalculating cart totals");
-            cart.calculateTotal();
+            userId = req.headers['x-guest-id'] || uuidv4();
+            isGuest = true;
+            res.setHeader('X-Guest-ID', userId);
         }
-        await cart.save();
-        console.log("Cart processed successfully");
+
+        let cart = await Cart.findOne({ user: userId });
+        if (!cart) {
+            cart = new Cart({ user: userId, items: [], subtotal: 0, total: 0, isGuest });
+        }
+
+        // Parse the user field if it contains JSON data
+        if (typeof cart.user === 'string' && cart.user.startsWith('{')) {
+            try {
+                const userData = JSON.parse(cart.user);
+                if (userData.productId && userData.quantity) {
+                    cart.items.push({
+                        product: userData.productId,
+                        quantity: parseInt(userData.quantity),
+                        price: 0 // You'll need to fetch the actual price from the product
+                    });
+                    cart.user = userId; // Reset the user field to just the ID
+                    await cart.save();
+                }
+            } catch (e) {
+                console.error('Error parsing user data:', e);
+            }
+        }
+
         req.cart = cart;
+        req.userId = userId;
+        req.isGuest = isGuest;
         next();
     } catch (error) {
-        console.error("Error in getCart middleware:", error);
-        if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({ message: 'Invalid token' });
-        }
-        next(error);
+        res.status(500).json({ message: 'Error fetching cart', error: error.message });
     }
 };
 
-
-
 // Get user's cart
-router.get('/', passport.authenticate('jwt', { session: false }), getCart, (req, res, next) => {
-    console.log("Sending cart response");
-    console.log("Authenticated user:", req.user);  // Add this line
-    getCart(req, res, next);
-}, (req, res) => {
-    console.log("Sending cart response");
-    res.json(req.cart);
+router.get('/', getCart, async (req, res) => {
+    try {
+        const populatedCart = await Cart.findById(req.cart._id).populate('items.product');
+        res.json(populatedCart);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching populated cart', error: error.message });
+    }
 });
 
 const sendProductAddedToCartEmail = async (user, product) => {
@@ -106,39 +115,60 @@ const sendProductAddedToCartEmail = async (user, product) => {
 };
 
 // Add item to cart
-router.post('/add', passport.authenticate('jwt', { session: false }), getCart, async (req, res) => {
+router.post('/add', getCart, async (req, res) => {
     try {
         const { productId, quantity } = req.body;
-        if (!mongoose.Types.ObjectId.isValid(productId)) {
-            return res.status(400).json({ message: 'Invalid product ID' });
-        }
-
         const product = await Product.findById(productId);
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
 
-        const existingItemIndex = req.cart.items.findIndex(item => item.product._id.toString() === productId);
+        const existingItemIndex = req.cart.items.findIndex(item => item.product.toString() === productId);
         if (existingItemIndex > -1) {
             req.cart.items[existingItemIndex].quantity += quantity;
         } else {
-            req.cart.items.push({ product: product._id, quantity, price: product.price.amount });
+            req.cart.items.push({ product: productId, quantity, price: product.price.amount });
         }
 
         req.cart.calculateTotal();
         await req.cart.save();
-        const user = await User.findById(req.user._id);
-        if (user && user.email) {
-            await sendProductAddedToCartEmail(user, product);
-        }
-
-        res.json(req.cart);
+        // const user = await User.findById(req.user._id);
+        // if (user && user.email) {
+        //     await sendProductAddedToCartEmail(user, product);
+        // }
+        const populatedCart = await Cart.findById(req.cart._id).populate('items.product');
+        res.json(populatedCart);
     } catch (error) {
         res.status(500).json({ message: 'Error adding item to cart', error: error.message });
     }
 });
 
+// Merge guest cart with user cart
+router.post('/merge', async (req, res) => {
+    try {
+        const { guestId, userId } = req.body;
 
+        const guestCart = await Cart.findOne({ user: guestId, isGuest: true });
+        let userCart = await Cart.findOne({ user: userId, isGuest: false });
+
+        if (!userCart) {
+            userCart = new Cart({ user: userId, items: [], subtotal: 0, total: 0, isGuest: false });
+        }
+
+        if (guestCart) {
+            userCart.items = [...userCart.items, ...guestCart.items];
+            userCart.calculateTotal();
+            await userCart.save();
+
+            // Delete the guest cart
+            await Cart.deleteOne({ _id: guestCart._id });
+        }
+
+        res.json(userCart);
+    } catch (error) {
+        res.status(500).json({ message: 'Error merging carts', error: error.message });
+    }
+});
 
 // Remove item from cart
 router.post('/remove', passport.authenticate('jwt', { session: false }), getCart, async (req, res) => {

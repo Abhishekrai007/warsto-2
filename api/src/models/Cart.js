@@ -7,11 +7,12 @@ const CartItemSchema = new mongoose.Schema({
 });
 
 const CartSchema = new mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    user: { type: String, required: true },
     items: [CartItemSchema],
     subtotal: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
+    isGuest: { type: Boolean, default: false },
 }, { timestamps: true });
 
 CartSchema.methods.calculateTotal = function () {
