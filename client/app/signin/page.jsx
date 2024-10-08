@@ -31,8 +31,8 @@ const SignIn = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const result = await dispatch(signIn({ email, password }));
       const guestId = localStorage.getItem("guestId");
+      const result = dispatch(signIn({ email, password }));
       if (guestId) {
         await mergeGuestData(guestId, userData.id);
       }

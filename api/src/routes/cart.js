@@ -146,19 +146,25 @@ router.post('/add', getCart, async (req, res) => {
 // Merge guest cart with user cart
 router.post('/merge', async (req, res) => {
     try {
-        const { guestId, userId } = req.body;
+        let userId;
+        const guestId = req.headers['x-guest-id'];
+
+        if (req.headers.authorization) {
+            const token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            userId = decoded.id;
+        } else {
+            return res.status(401).json({ message: 'Authentication required' });
+        }
 
         if (!guestId || !userId) {
-            return res.status(400).json({ message: 'Both guestId and userId are required' });
+            return res.status(400).json({ message: 'Both guest ID and user authentication are required' });
         }
 
         console.log('Merging carts for guestId:', guestId, 'and userId:', userId);
 
         const guestCart = await Cart.findOne({ user: guestId, isGuest: true });
         let userCart = await Cart.findOne({ user: userId, isGuest: false });
-
-        console.log('Guest cart:', guestCart);
-        console.log('User cart:', userCart);
 
         if (!userCart) {
             userCart = new Cart({ user: userId, items: [], subtotal: 0, total: 0, isGuest: false });

@@ -125,6 +125,7 @@ const authSlice = createSlice({
                 state.user = action.payload.user;
                 state.token = action.payload.token;
                 localStorage.setItem('token', action.payload.token);
+                localStorage.removeItem('guestId');
             })
             .addCase(signIn.rejected, (state, action) => {
                 state.loading = false;
@@ -160,3 +161,7 @@ const authSlice = createSlice({
 
 export const { logout, setGuestId } = authSlice.actions;
 export default authSlice.reducer;
+
+
+
+// 

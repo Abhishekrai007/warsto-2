@@ -7,22 +7,13 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { mergeWishlistsAfterLogin } = require('../utils/wishList');
+const { mergeCartsAfterLogin } = require('../utils/mergeCart');
 const router = express.Router();
 
 const generateTokens = (user) => {
     const accessToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15m' });
     const refreshToken = jwt.sign({ id: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
     return { accessToken, refreshToken };
-};
-
-const mergeCartsAfterLogin = async (userId, guestId) => {
-    try {
-        const response = await axios.post('http://localhost:5000/api/cart/merge', { userId, guestId });
-        return response.data;
-    } catch (error) {
-        console.error('Error merging carts:', error);
-        throw error;
-    }
 };
 
 passport.use(new GoogleStrategy({
@@ -93,20 +84,16 @@ router.post('/signup', async (req, res) => {
 
 router.post('/signin', (req, res, next) => {
     passport.authenticate('local', { session: false }, async (err, user, info) => {
-        if (err) {
-            return res.status(500).json({ message: 'An error occurred during sign in' });
-        }
-        if (!user) {
+        if (err || !user) {
             return res.status(400).json({ message: info ? info.message : 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-
         try {
-            const guestId = req.body.guestId; // Assuming guestId is sent from the client
+            const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+            const guestId = req.body.guestId;
+
             if (guestId) {
                 await mergeCartsAfterLogin(user._id.toString(), guestId);
-                await mergeWishlistsAfterLogin(user._id.toString(), guestId);
             }
 
             res.cookie('token', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000 });
@@ -115,7 +102,7 @@ router.post('/signin', (req, res, next) => {
             console.error('Error during signin:', error);
             return res.status(500).json({ message: 'An error occurred during sign in' });
         }
-    })(req, res);
+    })(req, res, next);
 });
 
 router.post('/refresh-token', async (req, res) => {
