@@ -3,18 +3,9 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 export const signIn = createAsyncThunk(
     'auth/signIn',
-    async ({ email, password, token }, { rejectWithValue }) => {
+    async ({ email, password, guestId }, { rejectWithValue }) => {
         try {
-            let response;
-            if (token) {
-                // Google sign-in
-                response = await api.get('/user', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-            } else {
-                // Regular sign-in
-                response = await api.post('/auth/signin', { email, password });
-            }
+            const response = await api.post('/auth/signin', { email, password, guestId });
             localStorage.setItem('token', response.data.token);
             return response.data;
         } catch (error) {

@@ -105,29 +105,44 @@ router.post('/clear', getWishlist, async (req, res) => {
     }
 });
 
-// Merge guest wishlist with user wishlist
 router.post('/merge', async (req, res) => {
     try {
         const { guestId, userId } = req.body;
 
+        if (!guestId || !userId) {
+            return res.status(400).json({ message: 'Both guestId and userId are required' });
+        }
+
+        console.log('Merging wishlists for guestId:', guestId, 'and userId:', userId);
+
         const guestWishlist = await Wishlist.findOne({ user: guestId, isGuest: true });
         let userWishlist = await Wishlist.findOne({ user: userId, isGuest: false });
 
+        console.log('Guest wishlist:', guestWishlist);
+        console.log('User wishlist:', userWishlist);
+
         if (!userWishlist) {
             userWishlist = new Wishlist({ user: userId, products: [], isGuest: false });
+            console.log('Created new user wishlist:', userWishlist);
         }
 
-        if (guestWishlist) {
+        if (guestWishlist && guestWishlist.products.length > 0) {
+            // Merge products from guest wishlist to user wishlist
             userWishlist.products = [...new Set([...userWishlist.products, ...guestWishlist.products])];
             await userWishlist.save();
+            console.log('Merged wishlist:', userWishlist);
 
             // Delete the guest wishlist
-            await Wishlist.deleteOne({ _id: guestWishlist._id });
+            await Wishlist.deleteOne({ user: guestId, isGuest: true });
+            console.log('Deleted guest wishlist');
+        } else {
+            console.log('No guest wishlist found or guest wishlist is empty');
         }
 
         const populatedWishlist = await Wishlist.findById(userWishlist._id).populate('products');
         res.json(populatedWishlist);
     } catch (error) {
+        console.error('Error merging wishlists:', error);
         res.status(500).json({ message: 'Error merging wishlists', error: error.message });
     }
 });

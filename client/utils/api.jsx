@@ -19,7 +19,7 @@ export const mergeGuestData = async (guestId, userId) => {
   try {
     await api.post("/cart/merge", { guestId, userId });
     await api.post("/wishlist/merge", { guestId, userId });
-    localStorage.removeItem("guestId"); // Remove the guest ID after merging
+    localStorage.removeItem("guestId");
   } catch (error) {
     console.error("Error merging guest data:", error);
   }

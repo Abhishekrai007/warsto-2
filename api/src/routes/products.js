@@ -38,6 +38,7 @@ router.get('/', cacheMiddleware(300), async (req, res) => {
                 { sku: { $regex: search, $options: 'i' } },
                 { 'attributes.collection': { $regex: search, $options: 'i' } },
                 { type: { $regex: search, $options: 'i' } },
+                { productCategory: { $regex: search, $options: 'i' } },
                 { categories: { $regex: search, $options: 'i' } },
                 { tags: { $regex: search, $options: 'i' } }
             ];
@@ -46,6 +47,7 @@ router.get('/', cacheMiddleware(300), async (req, res) => {
         // Add other filters
         if (req.query.collection) query['attributes.collection'] = new RegExp(req.query.collection, 'i');
         if (req.query.type) query.type = req.query.type;
+        if (req.query.productCategory) query.productCategory = req.query.productCategory;
         if (req.query.minPrice || req.query.maxPrice) {
             query['price.amount'] = {};
             if (req.query.minPrice) query['price.amount'].$gte = parseFloat(req.query.minPrice);
@@ -125,6 +127,7 @@ router.get('/:id/related', cacheMiddleware(300), async (req, res) => {
                 {
                     $or: [
                         { type: product.type },
+                        { type: product.productCategory },
                         { categories: { $in: product.categories } },
                         { 'attributes.collection': product.attributes.collection }
                     ]
@@ -141,6 +144,7 @@ router.get('/:id/related', cacheMiddleware(300), async (req, res) => {
 router.get('/filter-options', async (req, res) => {
     try {
         const types = await Product.distinct('type');
+        const productCategory = await Product.distinct("productCategory")
         const configurations = await Product.distinct('attributes.configuration');
         const colors = await Product.distinct('attributes.color.family');
         const dimensionLength = await Product.distinct("attributes.dimensions.length");
@@ -149,6 +153,7 @@ router.get('/filter-options', async (req, res) => {
         const dimensionUnit = await Product.distinct("attributes.dimensions.unit");
         res.json({
             types,
+            productCategory,
             configurations,
             colors,
             dimensionLength,

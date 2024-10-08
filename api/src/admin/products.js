@@ -16,11 +16,12 @@ const isAdmin = (req, res, next) => {
 // Get all products
 router.get('/', passport.authenticate("jwt", { session: false }), isAdmin, async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, type, collection, minPrice, maxPrice } = req.query;
+        const { page = 1, limit = 10, search, type, productCategory, collection, minPrice, maxPrice } = req.query;
         const query = {};
 
         if (search) query.$text = { $search: search };
         if (type) query.type = type;
+        if (productCategory) query.productCategory = productCategory;
         if (collection) query['attributes.collection'] = collection;
         if (minPrice || maxPrice) {
             query['price.amount'] = {};
@@ -49,6 +50,12 @@ router.get('/', passport.authenticate("jwt", { session: false }), isAdmin, async
 // Create a new product (admin only)
 router.post('/', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
+        const { type, productCategory } = req.body;
+        if ((type === 'Wardrobe' && !['Sliding Wardrobe', 'Openable Wardrobe'].includes(productCategory)) ||
+            (type === 'Storage' && !['Sliding Storage', 'Openable Storage'].includes(productCategory))) {
+            return res.status(400).json({ message: 'Invalid productCategory for the given type' });
+        }
+
         const product = new Product(req.body);
         await product.save();
         res.status(201).json(product);
@@ -96,6 +103,16 @@ async function sendPriceChangeEmail(user, product, oldPrice, newPrice) {
 // Update a product (admin only)
 router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
     try {
+
+        const { type, productCategory } = req.body;
+
+        if (type && productCategory) {
+            if ((type === 'Wardrobe' && !['Sliding Wardrobe', 'Openable Wardrobe'].includes(productCategory)) ||
+                (type === 'Storage' && !['Sliding Storage', 'Openable Storage'].includes(productCategory))) {
+                return res.status(400).json({ message: 'Invalid productCategory for the given type' });
+            }
+        }
+
         const oldProduct = await Product.findById(req.params.id);
         if (!oldProduct) {
             return res.status(404).json({ message: 'Product not found' });

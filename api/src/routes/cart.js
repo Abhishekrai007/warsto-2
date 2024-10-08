@@ -148,24 +148,59 @@ router.post('/merge', async (req, res) => {
     try {
         const { guestId, userId } = req.body;
 
+        if (!guestId || !userId) {
+            return res.status(400).json({ message: 'Both guestId and userId are required' });
+        }
+
+        console.log('Merging carts for guestId:', guestId, 'and userId:', userId);
+
         const guestCart = await Cart.findOne({ user: guestId, isGuest: true });
         let userCart = await Cart.findOne({ user: userId, isGuest: false });
 
+        console.log('Guest cart:', guestCart);
+        console.log('User cart:', userCart);
+
         if (!userCart) {
             userCart = new Cart({ user: userId, items: [], subtotal: 0, total: 0, isGuest: false });
+            console.log('Created new user cart:', userCart);
         }
 
-        if (guestCart) {
-            userCart.items = [...userCart.items, ...guestCart.items];
+        if (guestCart && guestCart.items.length > 0) {
+            // Merge items from guest cart to user cart
+            guestCart.items.forEach(guestItem => {
+                const existingItemIndex = userCart.items.findIndex(
+                    item => item.product.toString() === guestItem.product.toString()
+                );
+
+                if (existingItemIndex > -1) {
+                    // If item exists, update quantity
+                    userCart.items[existingItemIndex].quantity += guestItem.quantity;
+                } else {
+                    // If item doesn't exist, add it to user cart
+                    userCart.items.push({
+                        product: guestItem.product,
+                        quantity: guestItem.quantity,
+                        price: guestItem.price
+                    });
+                }
+            });
+
+            // Recalculate totals
             userCart.calculateTotal();
             await userCart.save();
+            console.log('Merged cart:', userCart);
 
             // Delete the guest cart
-            await Cart.deleteOne({ _id: guestCart._id });
+            await Cart.deleteOne({ user: guestId, isGuest: true });
+            console.log('Deleted guest cart');
+        } else {
+            console.log('No guest cart found or guest cart is empty');
         }
 
-        res.json(userCart);
+        const populatedCart = await Cart.findById(userCart._id).populate('items.product');
+        res.json(populatedCart);
     } catch (error) {
+        console.error('Error merging carts:', error);
         res.status(500).json({ message: 'Error merging carts', error: error.message });
     }
 });

@@ -35,6 +35,7 @@ const initialProductState = {
   name: "",
   description: "",
   type: "",
+  productCatrgory: "",
   price: { amount: "", currency: "INR" },
   inventory: { quantity: "", reserved: 0 },
   categories: [],
@@ -75,6 +76,12 @@ const Products = () => {
       {
         Header: "Type",
         accessor: "type",
+        Filter: SelectColumnFilter,
+        filter: "includes",
+      },
+      {
+        Header: "Product Category",
+        accessor: "productCategory",
         Filter: SelectColumnFilter,
         filter: "includes",
       },
@@ -407,6 +414,34 @@ const Products = () => {
                     <SelectContent>
                       <SelectItem value="Wardrobe">Wardrobe</SelectItem>
                       <SelectItem value="Storage">Storage</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    name="productCategory"
+                    value={formData.productCategory}
+                    onChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        productCategory: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Product Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Sliding Wardrobe">
+                        Sliding Wardrobe
+                      </SelectItem>
+                      <SelectItem value="Openable Wardrobe">
+                        Openable Wardrobe
+                      </SelectItem>
+                      <SelectItem value="Sliding Storage">
+                        Sliding Storage
+                      </SelectItem>
+                      <SelectItem value="Openable Storage">
+                        Openable Storage
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <Input

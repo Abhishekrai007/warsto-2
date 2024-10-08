@@ -6,6 +6,11 @@ const ProductSchema = new Schema({
     name: { type: String, required: true },
     description: String,
     type: { type: String, enum: ['Wardrobe', 'Storage'], required: true },
+    productCategory: {
+        type: String,
+        enum: ['Sliding Wardrobe', 'Openable Wardrobe', 'Sliding Storage', 'Openable Storage'],
+        required: true
+    },
     price: {
         amount: { type: Number, required: true },
         currency: { type: String, default: 'INR' }
@@ -67,14 +72,16 @@ ProductSchema.index({ 'attributes.color.family': 1 });
 ProductSchema.index({ 'attributes.configuration': 1 });
 ProductSchema.index({
     type: 1,
+    productCategory: 1,
     'attributes.configuration': 1,
     'attributes.color.family': 1,
     'price.amount': 1
 });
+// ProductSchema.index({ productCategory: 1 });
 ProductSchema.index({ 'attributes.collection': 1 });
 ProductSchema.methods.updateReviewStats = async function (newRating, oldRating = null) {
     const update = {};
-    const inc = oldRating ? 0 : 1; // If oldRating exists, we're updating an existing review
+    const inc = oldRating ? 0 : 1;
 
     update.$inc = {
         'reviews.totalReviews': inc,
