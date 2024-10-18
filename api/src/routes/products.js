@@ -44,29 +44,33 @@ router.get('/', cacheMiddleware(300), async (req, res) => {
             ];
         }
 
-        // Add other filters
+        // Handling array filters like types, colors, etc.
+        if (req.query.type) query.type = { $in: req.query.type.split(',') };
         if (req.query.collection) query['attributes.collection'] = new RegExp(req.query.collection, 'i');
-        if (req.query.type) query.type = req.query.type;
-        if (req.query.productCategory) query.productCategory = req.query.productCategory;
         if (req.query.minPrice || req.query.maxPrice) {
             query['price.amount'] = {};
             if (req.query.minPrice) query['price.amount'].$gte = parseFloat(req.query.minPrice);
             if (req.query.maxPrice) query['price.amount'].$lte = parseFloat(req.query.maxPrice);
         }
-        if (req.query.category) query.categories = new RegExp(req.query.category, 'i');
-        if (req.query.color) query['attributes.color.family'] = new RegExp(req.query.color, 'i');
+
+        if (req.query.productCategory) query.productCategory = { $in: req.query.productCategory.split(',') };
+        if (req.query.configuration) query['attributes.configuration'] = { $in: req.query.configuration.split(',') };
+        if (req.query.color) query['attributes.color.family'] = { $in: req.query.color.split(',') };
         if (req.query.material) query['attributes.material'] = new RegExp(req.query.material, 'i');
-        if (req.query.configuration) query['attributes.configuration'] = new RegExp(req.query.configuration, 'i');
         if (req.query.designer) query['designer.name'] = new RegExp(req.query.designer, 'i');
         if (req.query.tag) query.tags = new RegExp(req.query.tag, 'i');
+        if (req.query.category) query.categories = new RegExp(req.query.category, 'i');
+        if (req.query.length) query['attributes.dimensions.length'] = { $in: req.query.length.split(',') };
+        if (req.query.width) query['attributes.dimensions.width'] = { $in: req.query.width.split(',') };
+        if (req.query.height) query['attributes.dimensions.height'] = { $in: req.query.height.split(',') };
 
-        const totalProducts = await Product.countDocuments(query);
+        const totalProducts = await Product.countDocuments(query); // Count all matching products
         const totalPages = Math.ceil(totalProducts / limit);
 
         const products = await Product.find(query)
             .sort(sort)
             .skip(skip)
-            .limit(limit)
+            .limit(limit) // Apply pagination
             .lean();
 
         res.json({
@@ -310,3 +314,4 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
+

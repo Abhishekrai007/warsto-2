@@ -32,22 +32,40 @@ const ProductSchema = new Schema({
     },
     categories: [{ type: String }],
     attributes: {
-        collection: { type: String, required: true },
+        collectionDefaults: [{
+            collection: String,
+            shutterFinish: String,
+            brand: [String]
+        }],
         material: String,
         color: {
             family: String,
             shade: String
         },
-        dimensions: {
-            length: Number,
-            width: Number,
-            height: Number,
-            unit: { type: String, enum: ['mm', 'cm', 'inch'], default: 'cm' }
+        width: Number,
+        height: Number,
+        depth: Number,
+        doors: { type: Number, enum: [1, 2, 3, 4, 5, 6] },
+        style: [{ type: String, enum: ['Modern', 'Sleek', 'Elegant', 'Essential'] }],
+        woodwork: {
+            carcassMaterial: [{ type: String, enum: ['MR', 'BWR', 'BWP'] }],
+            carcassFinish: [{ type: String, enum: ['WLAM', 'FABLAM'] }],
+            shutterMaterial: { type: String, enum: ['MR', 'BWR', 'BWP', 'MDF', 'HDHMR', 'HDFMR', 'RcSAW'] },
+            shutterFinish: { type: String, enum: ['Laminate', 'Acrylic', 'PU', 'RPU', 'VENR', 'GLX'] },
+            finishType: [{ type: String, enum: ['Glossy', 'Matt', 'Text'] }],
+            finishCode: String
         },
+        brand: { type: String, enum: ['Merino', 'Greenlam', 'Senosan', 'Asian Paints', 'SaintGob'] },
         configuration: String
     },
+    hardware: {
+        channels: [{ type: String, enum: ['Hettich', 'Haffle', 'ebco', 'heppo', 'NA'] }],
+        hinges: [{ type: String, enum: ['Hettich', 'Haffle', 'ebco', 'heppo', 'NA'] }],
+        hRodsAndAccessories: [{ type: String, enum: ['Hettich', 'Haffle', 'Ebco', 'Heppo', 'Onyx', 'NA'] }]
+    },
     designer: {
-        name: String,
+        name: { type: String, required: true },
+        area: { type: String, required: true },
         royalty: Number
     },
     images: [{
@@ -77,6 +95,13 @@ ProductSchema.index({
     'attributes.color.family': 1,
     'price.amount': 1
 });
+ProductSchema.index({ 'attributes.doors': 1 });
+ProductSchema.index({ 'attributes.style': 1 });
+ProductSchema.index({ 'attributes.woodwork.carcassMaterial': 1 });
+ProductSchema.index({ 'attributes.woodwork.shutterMaterial': 1 });
+ProductSchema.index({ 'attributes.brand': 1 });
+ProductSchema.index({ 'hardware.channels': 1 });
+
 // ProductSchema.index({ productCategory: 1 });
 ProductSchema.index({ 'attributes.collection': 1 });
 ProductSchema.methods.updateReviewStats = async function (newRating, oldRating = null) {

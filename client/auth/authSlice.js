@@ -42,6 +42,7 @@ export const signUp = createAsyncThunk(
         }
     }
 );
+
 export const loadUser = createAsyncThunk(
     'auth/loadUser',
     async (_, { rejectWithValue }) => {
@@ -164,4 +165,3 @@ export default authSlice.reducer;
 
 
 
-// 

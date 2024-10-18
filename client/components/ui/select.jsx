@@ -1,8 +1,9 @@
 import { ChevronDown } from "lucide-react";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useRef, useEffect } from "react";
 
 const Select = ({ children, onChange, value }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
 
   const handleChange = useCallback(
     (newValue) => {
@@ -12,8 +13,21 @@ const Select = ({ children, onChange, value }) => {
     [onChange]
   );
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [ref]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       {React.Children.map(children, (child) => {
         if (child.type === SelectTrigger) {
           return React.cloneElement(child, {
@@ -22,10 +36,9 @@ const Select = ({ children, onChange, value }) => {
           });
         }
         if (child.type === SelectContent) {
-          return (
-            isOpen &&
-            React.cloneElement(child, { onChange: handleChange, setIsOpen })
-          );
+          return isOpen
+            ? React.cloneElement(child, { onChange: handleChange })
+            : null;
         }
         return child;
       })}
@@ -43,23 +56,20 @@ const SelectTrigger = ({ onClick, value, children }) => (
   </button>
 );
 
-const SelectContent = ({ children, onChange, setIsOpen }) => (
+const SelectContent = ({ children, onChange }) => (
   <div className="absolute z-10 w-full mt-1 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5">
     <ul className="py-1 overflow-auto text-base rounded-md max-h-60 focus:outline-none sm:text-sm">
       {React.Children.map(children, (child) =>
-        React.cloneElement(child, { onChange, setIsOpen })
+        React.cloneElement(child, { onChange })
       )}
     </ul>
   </div>
 );
 
-const SelectItem = ({ children, value, onChange, setIsOpen }) => (
+const SelectItem = ({ children, value, onChange }) => (
   <li
     className="relative py-2 pl-3 pr-9 text-gray-900 cursor-default select-none hover:bg-gray-100 transition duration-150 ease-in-out"
-    onClick={() => {
-      onChange(value);
-      setIsOpen(false);
-    }}
+    onClick={() => onChange(value)}
   >
     {children}
   </li>

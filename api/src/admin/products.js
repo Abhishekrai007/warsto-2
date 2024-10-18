@@ -5,6 +5,35 @@ const passport = require('passport');
 const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const Whishlist = require('../models/WhishList');
+const multer = require('multer');
+const path = require('path');
+
+
+const collectionDefaults = [
+    { collection: 'Opulance', shutterFinish: 'PU', brand: ['Asian Paints'] },
+    { collection: 'NexGen', shutterFinish: 'Brand Name', brand: ['Brand Name'] },
+    { collection: 'Smart Space', shutterFinish: 'Laminate', brand: ['Greenlam', 'Merino'] },
+    { collection: 'StyleShift', shutterFinish: 'Acrylic', brand: ['Senosan'] },
+    { collection: 'Sovereign', shutterFinish: 'Acrylic', brand: ['Senosan'] },
+    { collection: 'Ornat', shutterFinish: 'RPU', brand: ['Asian Paints'] }
+];
+
+function getCollectionDefaults(collection) {
+    return collectionDefaults.find(def => def.collection === collection) || {};
+}
+
+// Set up multer for handling file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/')  // Make sure this directory exists
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + path.extname(file.originalname))
+    }
+});
+
+const upload = multer({ storage: storage, limit: { files: 5 } });
+
 // Middleware to check if the user is an admin
 const isAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
@@ -12,6 +41,11 @@ const isAdmin = (req, res, next) => {
     }
     next();
 };
+
+// Get collection defaults
+router.get('/collection-defaults', passport.authenticate("jwt", { session: false }), isAdmin, (req, res) => {
+    res.json(collectionDefaults);
+});
 
 // Get all products
 router.get('/', passport.authenticate("jwt", { session: false }), isAdmin, async (req, res) => {
@@ -41,6 +75,7 @@ router.get('/', passport.authenticate("jwt", { session: false }), isAdmin, async
             totalPages,
             totalProducts,
             currentPage: page,
+            collectionDefaults
         });
     } catch (error) {
         res.status(500).json({ message: 'Error fetching products', error: error.message });
@@ -48,19 +83,48 @@ router.get('/', passport.authenticate("jwt", { session: false }), isAdmin, async
 });
 
 // Create a new product (admin only)
-router.post('/', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
+router.post('/', passport.authenticate('jwt', { session: false }), isAdmin, upload.array('image', 4), async (req, res) => {
     try {
-        const { type, productCategory } = req.body;
+        let productData = JSON.parse(req.body.productData);
+        const { type, productCategory } = productData;
+        const { collection } = productData.attributes;
+        const defaults = getCollectionDefaults(collection);
+        if (defaults.shutterFinish) {
+            productData.attributes.woodwork.shutterFinish = defaults.shutterFinish;
+        }
+        if (defaults.brand) {
+            productData.attributes.brand = defaults.brand[0];
+        }
+
         if ((type === 'Wardrobe' && !['Sliding Wardrobe', 'Openable Wardrobe'].includes(productCategory)) ||
             (type === 'Storage' && !['Sliding Storage', 'Openable Storage'].includes(productCategory))) {
             return res.status(400).json({ message: 'Invalid productCategory for the given type' });
         }
 
-        const product = new Product(req.body);
+        if (req.files && req.files.length > 0) {
+            productData.images = req.files.map((file, index) => ({
+                url: `/uploads/${file.filename}`,
+                altText: req.body[`image${index + 1}`] || '',
+                isPrimary: index === 0
+            }));
+        }
+
+        // Parse nested objects
+        ['price', 'inventory', 'attributes', 'designer', 'hardware'].forEach(key => {
+            if (typeof productData[key] === 'string') {
+                productData[key] = JSON.parse(productData[key]);
+            }
+        });
+
+        const product = new Product(productData);
         await product.save();
         res.status(201).json(product);
     } catch (error) {
-        res.status(400).json({ message: 'Error creating product', error: error.message });
+        if (error instanceof multer.MulterError) {
+            return res.status(400).json({ message: 'File upload error', error: error.message });
+        } else {
+            return res.status(500).json({ message: 'Error creating product', error: error.message });
+        }
     }
 });
 
@@ -100,11 +164,18 @@ async function sendPriceChangeEmail(user, product, oldPrice, newPrice) {
 }
 
 // Update a product (admin only)
-// Update a product (admin only)
-router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, async (req, res) => {
+router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, upload.array('image', 4), async (req, res) => {
     try {
-
-        const { type, productCategory } = req.body;
+        const productData = JSON.parse(req.body.productData);
+        const { type, productCategory } = productData;
+        const { collection } = productData.attributes;
+        const defaults = getCollectionDefaults(collection);
+        if (defaults.shutterFinish) {
+            productData.attributes.woodwork.shutterFinish = defaults.shutterFinish;
+        }
+        if (defaults.brand) {
+            productData.attributes.brand = defaults.brand[0];
+        }
 
         if (type && productCategory) {
             if ((type === 'Wardrobe' && !['Sliding Wardrobe', 'Openable Wardrobe'].includes(productCategory)) ||
@@ -119,9 +190,25 @@ router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, as
         }
 
         const oldPrice = oldProduct.price.amount;
-        const newPrice = req.body.price.amount;
+        const newPrice = productData.price.amount;
 
-        const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        // Handle images
+        if (req.files && req.files.length > 0) {
+            productData.images = req.files.map((file, index) => ({
+                url: `/uploads/${file.filename}`,
+                altText: req.body[`image${index + 1}`] || '',
+                isPrimary: index === 0
+            }));
+        }
+
+        // Parse nested objects
+        ['price', 'inventory', 'attributes', 'designer', 'hardware'].forEach(key => {
+            if (typeof productData[key] === 'string') {
+                productData[key] = JSON.parse(productData[key]);
+            }
+        });
+
+        const product = await Product.findByIdAndUpdate(req.params.id, productData, { new: true });
 
         // Check if price has changed
         if (oldPrice !== newPrice) {
@@ -139,7 +226,11 @@ router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, as
 
         res.json(product);
     } catch (error) {
-        res.status(400).json({ message: 'Error updating product', error: error.message });
+        if (error instanceof multer.MulterError) {
+            return res.status(400).json({ message: 'File upload error', error: error.message });
+        } else {
+            return res.status(500).json({ message: 'Error creating product', error: error.message });
+        };
     }
 });
 
@@ -179,3 +270,6 @@ PUT /products/123456789
 DELETE /products/123456789
 
 */
+
+
+
