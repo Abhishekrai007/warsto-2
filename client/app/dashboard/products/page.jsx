@@ -45,6 +45,13 @@ const initialProductState = {
   inventory: { quantity: "", reserved: 0 },
   categories: [],
   attributes: {
+    collectionDefaults: [
+      {
+        collection: "",
+        shutterFinish: "",
+        brand: [],
+      },
+    ],
     collection: "",
     material: "",
     color: { family: "", shade: "" },
@@ -83,12 +90,25 @@ const Products = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [formData, setFormData] = useState(initialProductState);
+  const [formData, setFormData] = useState({
+    ...initialProductState,
+    attributes: {
+      ...initialProductState.attributes,
+      collection: "",
+      woodwork: {
+        ...initialProductState.attributes.woodwork,
+        shutterFinish: "",
+      },
+    },
+  });
+
   const [totalPages, setTotalPages] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
   const [images, setImages] = useState([]);
   const [altTexts, setAltTexts] = useState([]);
   const [collectionDefaults, setCollectionDefaults] = useState([]);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [pageIndex, setPageIndex] = useState(0);
 
   const columns = useMemo(
     () => [
@@ -164,7 +184,7 @@ const Products = () => {
     headerGroups,
     page,
     prepareRow,
-    state: { pageIndex, pageSize },
+    state,
     gotoPage,
     setPageSize,
   } = useTable(
@@ -173,26 +193,26 @@ const Products = () => {
       data: products,
       manualPagination: true,
       pageCount: totalPages,
-      initialState: { pageIndex: 0, pageSize: 10 },
+      initialState: {
+        pageIndex: pageIndex,
+        pageSize: itemsPerPage,
+      },
     },
     useFilters,
     useSortBy,
     usePagination
   );
 
-  const fetchProducts = useCallback(async (page = 1, pageSize = 10) => {
+  const fetchProducts = useCallback(async (page, limit) => {
     try {
       setLoading(true);
       const response = await api.get("admin/products", {
-        params: { page, limit: pageSize },
+        params: { page, limit },
       });
       if (response.data && Array.isArray(response.data.products)) {
         setProducts(response.data.products);
         setTotalPages(response.data.totalPages);
         setTotalProducts(response.data.totalProducts);
-      } else {
-        console.error("Unexpected response format:", response.data);
-        setProducts([]);
       }
     } catch (error) {
       console.error("Error fetching products:", error);
@@ -202,16 +222,19 @@ const Products = () => {
     }
   }, []);
 
-  const debouncedFetchProducts = useCallback(
-    debounce((page, pageSize) => {
-      fetchProducts(page, pageSize);
-    }, 300),
+  const debouncedFetchProducts = useMemo(
+    () => debounce((page, pageSize) => fetchProducts(page, pageSize), 300),
     [fetchProducts]
   );
 
   useEffect(() => {
-    debouncedFetchProducts(pageIndex + 1, pageSize);
-  }, [debouncedFetchProducts, pageIndex, pageSize]);
+    const currentPage = pageIndex + 1;
+    debouncedFetchProducts(currentPage, itemsPerPage);
+
+    return () => {
+      debouncedFetchProducts.cancel();
+    };
+  }, [pageIndex, itemsPerPage, debouncedFetchProducts]);
 
   useEffect(() => {
     const fetchCollectionDefaults = async () => {
@@ -264,7 +287,14 @@ const Products = () => {
 
   const handleEdit = useCallback((product) => {
     setEditingProduct(product);
-    setFormData(product);
+    setFormData({
+      ...product,
+      attributes: {
+        ...product.attributes,
+        // Extract collection from collectionDefaults
+        collection: product.attributes.collectionDefaults[0]?.collection || "",
+      },
+    });
     setImages(product.images || []);
     setAltTexts((product.images || []).map((img) => img.altText || ""));
     setIsDialogOpen(true);
@@ -362,12 +392,29 @@ const Products = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
 
     try {
       const formDataToSend = new FormData();
       const productData = { ...formData };
 
-      // Generate SKU if it's a new product
+      // Ensure collection is properly set
+      if (!productData.attributes.collection) {
+        throw new Error("Collection is required");
+      }
+
+      if (!productData.attributes.collectionDefaults) {
+        productData.attributes.collectionDefaults = [
+          {
+            collection: productData.attributes.collection,
+            shutterFinish: productData.attributes.woodwork.shutterFinish,
+            brand: Array.isArray(productData.attributes.brand)
+              ? productData.attributes.brand
+              : [productData.attributes.brand],
+          },
+        ];
+      }
+
       if (!editingProduct) {
         productData.sku = generateSKU(
           productData.type,
@@ -375,10 +422,10 @@ const Products = () => {
         );
       }
 
-      // Ensure shutter finish and brand are set correctly
       const collectionDefault = collectionDefaults.find(
         (def) => def.collection === productData.attributes.collection
       );
+
       if (collectionDefault) {
         productData.attributes.woodwork.shutterFinish =
           collectionDefault.shutterFinish;
@@ -387,15 +434,16 @@ const Products = () => {
         }
       }
 
-      // Append product data
       formDataToSend.append("productData", JSON.stringify(productData));
 
-      // Append images
-      images.forEach((image, index) => {
-        if (image instanceof File) {
-          formDataToSend.append(`image`, image);
-        }
-      });
+      // Handle images
+      if (images.length > 0) {
+        images.forEach((image) => {
+          if (image instanceof File) {
+            formDataToSend.append("image", image);
+          }
+        });
+      }
 
       const response = editingProduct
         ? await api.put(
@@ -450,8 +498,14 @@ const Products = () => {
               </Button>
               <div className="flex items-center gap-4">
                 <Select
-                  value={pageSize.toString()}
-                  onChange={(value) => setPageSize(Number(value))}
+                  value={itemsPerPage.toString()}
+                  onChange={(value) => {
+                    const newSize = Number(value);
+                    setItemsPerPage(newSize);
+                    setPageSize(newSize);
+                    setPageIndex(0); // Reset to first page
+                    gotoPage(0);
+                  }}
                 >
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Select page size" />
@@ -518,11 +572,15 @@ const Products = () => {
               <Pagination
                 currentPage={pageIndex + 1}
                 totalPages={totalPages}
-                onPageChange={(page) => gotoPage(page - 1)}
+                onPageChange={(page) => {
+                  const newPageIndex = page - 1;
+                  setPageIndex(newPageIndex);
+                  gotoPage(newPageIndex);
+                }}
               />
               <p className="text-sm text-gray-500">
-                Showing {pageIndex * pageSize + 1} to{" "}
-                {Math.min((pageIndex + 1) * pageSize, totalProducts)} of{" "}
+                Showing {pageIndex * itemsPerPage + 1} to{" "}
+                {Math.min((pageIndex + 1) * itemsPerPage, totalProducts)} of{" "}
                 {totalProducts} products
               </p>
             </div>
@@ -535,6 +593,7 @@ const Products = () => {
           onSubmit={handleSubmit}
           editingProduct={editingProduct}
           formData={formData}
+          setFormData={setFormData}
           handleInputChange={handleInputChange}
           images={images}
           setImages={setImages}
@@ -553,6 +612,7 @@ function ImprovedProductModal({
   onSubmit,
   editingProduct,
   formData,
+  setFormData,
   handleInputChange,
   images,
   setImages,
@@ -561,45 +621,55 @@ function ImprovedProductModal({
   collectionDefaults,
 }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [isFormValid, setIsFormValid] = useState(false);
+  const [isFormValid, setIsFormValid] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const validateForm = () => {
-      // Basic required fields
-      const requiredFields = [
-        formData.sku,
-        formData.name,
-        formData.type,
-        formData.productCategory,
-        formData.price.amount,
-        formData.inventory.quantity,
-        formData.attributes.collection,
-        formData.attributes.material,
-        formData.attributes.color.family,
-        formData.attributes.width,
-        formData.attributes.height,
-        formData.attributes.depth,
-        formData.attributes.doors,
-        formData.designer.name,
-        formData.designer.area,
-      ];
+      const requiredFields = {
+        basic: [
+          formData.name,
+          formData.type,
+          formData.productCategory,
+          formData.price.amount,
+          formData.inventory.quantity,
+        ],
+        attributes: [
+          formData.attributes.collection,
+          formData.attributes.material,
+          formData.attributes.color.family,
+          formData.attributes.width,
+          formData.attributes.height,
+          formData.attributes.depth,
+          formData.attributes.doors,
+          formData.designer.name,
+          formData.designer.area,
+        ],
+      };
 
-      // Check if all required fields are filled
-      const allRequiredFieldsFilled = requiredFields.every(
+      const basicFieldsValid = requiredFields.basic.every(
+        (field) => field !== "" && field !== undefined
+      );
+      const attributesFieldsValid = requiredFields.attributes.every(
         (field) => field !== "" && field !== undefined
       );
 
-      // Check if at least one style is selected
-      const hasStyle = formData.attributes.style.length > 0;
+      // When editing, don't require new images
+      const imagesValid = editingProduct ? true : images.length > 0;
 
-      // Check if images are uploaded
-      const hasAllImages = images.length === 4;
+      // Style validation
+      const hasStyle =
+        Array.isArray(formData.attributes.style) &&
+        formData.attributes.style.length > 0;
 
-      setIsFormValid(allRequiredFieldsFilled && hasStyle && hasAllImages);
+      setIsFormValid(
+        basicFieldsValid && attributesFieldsValid && hasStyle && imagesValid
+      );
     };
 
     validateForm();
-  }, [formData, images]);
+  }, [formData, images, editingProduct]);
 
   const handleFileChange = (e) => {
     const newFiles = Array.from(e.target.files);
@@ -621,28 +691,51 @@ function ImprovedProductModal({
   };
 
   const handleCollectionChange = (value) => {
-    const defaults =
-      collectionDefaults.find((def) => def.collection === value) || {};
-    handleInputChange({ target: { name: "collection", value } }, "attributes");
-    handleInputChange(
-      {
-        target: {
-          name: "shutterFinish",
-          value: defaults.shutterFinish || "",
+    // Find the collection defaults first
+    const collectionDefault = collectionDefaults.find(
+      (def) => def.collection === value
+    );
+
+    // Prepare the updates object with the new collection value
+    const updates = {
+      ...formData,
+      attributes: {
+        ...formData.attributes,
+        collection: value, // Set the new collection value
+        collectionDefaults: [
+          {
+            collection: value,
+            shutterFinish: collectionDefault?.shutterFinish || "",
+            brand: collectionDefault?.brand || [],
+          },
+        ],
+        // Update brand based on collection type
+        brand:
+          value === "Smart Space" ? "" : collectionDefault?.brand?.[0] || "",
+        woodwork: {
+          ...formData.attributes.woodwork,
+          shutterFinish: collectionDefault?.shutterFinish || "",
         },
       },
-      "attributes",
-      "woodwork"
-    );
-    handleInputChange(
-      {
-        target: {
-          name: "brand",
-          value: defaults.brand ? defaults.brand[0] : "",
-        },
-      },
-      "attributes"
-    );
+    };
+
+    // Update the form data with all the changes at once
+    setFormData(updates);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await onSubmit(e);
+    } catch (err) {
+      setError(err.message || "An error occurred while saving the product");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const steps = [
@@ -654,7 +747,18 @@ function ImprovedProductModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDownOutside={(e) => {
+          e.preventDefault();
+        }}
+      >
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+            {error}
+          </div>
+        )}
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">
             {editingProduct ? "Edit Product" : "Add New Product"}
@@ -678,6 +782,7 @@ function ImprovedProductModal({
                   formData={formData}
                   handleInputChange={handleInputChange}
                   handleFileChange={handleFileChange}
+                  setFormData={setFormData}
                   handleAltTextChange={handleAltTextChange}
                   removeImage={removeImage}
                   images={images}
@@ -690,19 +795,29 @@ function ImprovedProductModal({
             ))}
           </Tabs>
           <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
             {currentStep < steps.length - 1 ? (
               <Button
                 type="button"
                 onClick={() => setCurrentStep(currentStep + 1)}
+                disabled={isSubmitting}
               >
                 Next
               </Button>
             ) : (
-              <Button type="submit" disabled={!isFormValid}>
-                {editingProduct ? "Update Product" : "Add Product"}
+              <Button type="submit" disabled={!isFormValid || isSubmitting}>
+                {isSubmitting
+                  ? "Saving..."
+                  : editingProduct
+                  ? "Update Product"
+                  : "Add Product"}
               </Button>
             )}
           </DialogFooter>
@@ -755,7 +870,12 @@ function BasicInfoStep({ formData, handleInputChange }) {
             handleInputChange({ target: { name: "type", value } })
           }
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Type" />
           </SelectTrigger>
           <SelectContent>
@@ -773,7 +893,12 @@ function BasicInfoStep({ formData, handleInputChange }) {
             handleInputChange({ target: { name: "productCategory", value } })
           }
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Category" />
           </SelectTrigger>
           <SelectContent>
@@ -812,6 +937,7 @@ function BasicInfoStep({ formData, handleInputChange }) {
 
 function AttributesStep({
   formData,
+  setFormData,
   handleInputChange,
   collectionDefaults,
   handleCollectionChange,
@@ -820,15 +946,17 @@ function AttributesStep({
   const [brandOptions, setBrandOptions] = useState([]);
 
   useEffect(() => {
+    if (!formData.attributes.collection) return;
+
     if (formData.attributes.collection === "Smart Space") {
       setBrandOptions(["Greenlam", "Merino"]);
     } else {
       const defaults = collectionDefaults.find(
         (def) => def.collection === formData.attributes.collection
       );
-      setBrandOptions(defaults ? [defaults.brand] : []);
+      setBrandOptions(defaults?.brand || []);
     }
-  }, [formData.attributes.collection]);
+  }, [formData.attributes.collection, collectionDefaults]);
 
   const handleStyleAdd = () => {
     if (styleInput && !formData.attributes.style.includes(styleInput)) {
@@ -862,18 +990,27 @@ function AttributesStep({
         <Label htmlFor="collection">Collection</Label>
         <Select
           name="collection"
-          value={formData.attributes.collection}
+          value={formData.attributes.collection || ""}
           onChange={handleCollectionChange}
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Select Collection" />
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
+            <SelectValue placeholder="Select Collection">
+              {formData.attributes.collectionDefaults.collection ||
+                "Select Collection"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {collectionDefaults.map((def) => (
-              <SelectItem key={def.collection} value={def.collection}>
-                {def.collection}
-              </SelectItem>
-            ))}
+            {Array.isArray(collectionDefaults) &&
+              collectionDefaults.map((def) => (
+                <SelectItem key={def.collection} value={def.collection}>
+                  {def.collection}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>
@@ -946,7 +1083,12 @@ function AttributesStep({
             )
           }
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Doors" />
           </SelectTrigger>
           <SelectContent>
@@ -1029,7 +1171,12 @@ function AttributesStep({
               )
             }
           >
-            <SelectTrigger>
+            <SelectTrigger
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
               <SelectValue placeholder="Select Brand" />
             </SelectTrigger>
             <SelectContent>
@@ -1068,7 +1215,12 @@ function AttributesStep({
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Carcass Material" />
           </SelectTrigger>
           <SelectContent>
@@ -1094,7 +1246,12 @@ function AttributesStep({
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Carcass Finish" />
           </SelectTrigger>
           <SelectContent>
@@ -1120,7 +1277,12 @@ function AttributesStep({
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Carcass Material" />
           </SelectTrigger>
           <SelectContent>
@@ -1157,7 +1319,12 @@ function AttributesStep({
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Finish Type" />
           </SelectTrigger>
           <SelectContent>
@@ -1214,7 +1381,12 @@ function HardwareStep({ formData, handleInputChange }) {
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Channels" />
           </SelectTrigger>
           <SelectContent>
@@ -1236,7 +1408,12 @@ function HardwareStep({ formData, handleInputChange }) {
           }
           multiple
         >
-          <SelectTrigger>
+          <SelectTrigger
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+          >
             <SelectValue placeholder="Select Hinges" />
           </SelectTrigger>
           <SelectContent>

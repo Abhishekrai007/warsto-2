@@ -1,12 +1,16 @@
 import { ChevronDown } from "lucide-react";
 import React, { useCallback, useState, useRef, useEffect } from "react";
 
-const Select = ({ children, onChange, value }) => {
+const Select = ({ children, onChange, value, onOpenChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef(null);
 
   const handleChange = useCallback(
-    (newValue) => {
+    (newValue, e) => {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
       onChange(newValue);
       setIsOpen(false);
     },
@@ -17,6 +21,9 @@ const Select = ({ children, onChange, value }) => {
     const handleClickOutside = (event) => {
       if (ref.current && !ref.current.contains(event.target)) {
         setIsOpen(false);
+        if (onOpenChange) {
+          onOpenChange(false);
+        }
       }
     };
 
@@ -24,14 +31,26 @@ const Select = ({ children, onChange, value }) => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [ref]);
+  }, [ref, onOpenChange]);
+
+  const toggleOpen = useCallback(
+    (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsOpen(!isOpen);
+      if (onOpenChange) {
+        onOpenChange(!isOpen);
+      }
+    },
+    [isOpen, onOpenChange]
+  );
 
   return (
     <div className="relative" ref={ref}>
       {React.Children.map(children, (child) => {
         if (child.type === SelectTrigger) {
           return React.cloneElement(child, {
-            onClick: () => setIsOpen(!isOpen),
+            onClick: toggleOpen,
             value,
           });
         }
@@ -69,7 +88,11 @@ const SelectContent = ({ children, onChange }) => (
 const SelectItem = ({ children, value, onChange }) => (
   <li
     className="relative py-2 pl-3 pr-9 text-gray-900 cursor-default select-none hover:bg-gray-100 transition duration-150 ease-in-out"
-    onClick={() => onChange(value)}
+    onClick={(e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onChange(value, e);
+    }}
   >
     {children}
   </li>

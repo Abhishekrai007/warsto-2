@@ -51,7 +51,7 @@ const getCart = async (req, res, next) => {
                     cart.items.push({
                         product: userData.productId,
                         quantity: parseInt(userData.quantity),
-                        price: 0 // You'll need to fetch the actual price from the product
+                        price: 0
                     });
                     cart.user = userId; // Reset the user field to just the ID
                     await cart.save();

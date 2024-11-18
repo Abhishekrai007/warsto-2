@@ -87,8 +87,16 @@ router.post('/', passport.authenticate('jwt', { session: false }), isAdmin, uplo
     try {
         let productData = JSON.parse(req.body.productData);
         const { type, productCategory } = productData;
-        const { collection } = productData.attributes;
+        const collection = productData.attributes.collection;
         const defaults = getCollectionDefaults(collection);
+
+        // Update collectionDefaults array
+        productData.attributes.collectionDefaults = [{
+            collection: collection,
+            shutterFinish: defaults.shutterFinish || '',
+            brand: defaults.brand || []
+        }];
+
         if (defaults.shutterFinish) {
             productData.attributes.woodwork.shutterFinish = defaults.shutterFinish;
         }
@@ -168,8 +176,16 @@ router.put('/:id', passport.authenticate('jwt', { session: false }), isAdmin, up
     try {
         const productData = JSON.parse(req.body.productData);
         const { type, productCategory } = productData;
-        const { collection } = productData.attributes;
+        const collection = productData.attributes.collection;
         const defaults = getCollectionDefaults(collection);
+
+        // Update collectionDefaults array
+        productData.attributes.collectionDefaults = [{
+            collection: collection,
+            shutterFinish: defaults.shutterFinish || '',
+            brand: defaults.brand || []
+        }];
+
         if (defaults.shutterFinish) {
             productData.attributes.woodwork.shutterFinish = defaults.shutterFinish;
         }
